@@ -22,7 +22,8 @@ pub enum Cell {
 pub struct Universe {
     width: u32,
     height: u32,
-    cells: FixedBitSet,
+    current: FixedBitSet,
+    next: FixedBitSet,
 }
 
 #[wasm_bindgen]
@@ -32,18 +33,20 @@ impl Universe {
 
         let width = 64;
         let height = 64;
-
         let size = (width * height) as usize;
-        let mut cells = FixedBitSet::with_capacity(size);
-
+        
+        let mut current = FixedBitSet::with_capacity(size);
         for i in 0..size {
-            cells.set(i, i % 2 == 0 || i % 7 == 0);
+            current.set(i, i % 2 == 0 || i % 7 == 0);
         }
+        
+        let next = FixedBitSet::with_capacity(size);
 
         Universe {
             width,
             height,
-            cells,
+            current,
+            next,
         }
     }
 
@@ -63,7 +66,7 @@ impl Universe {
             new_cells.set(i, false);
         }
 
-        self.cells = new_cells;
+        self.current = new_cells;
     }
 
     pub fn height(&self) -> u32 {
@@ -79,11 +82,11 @@ impl Universe {
             new_cells.set(i, false);
         }
 
-        self.cells = new_cells;
+        self.current = new_cells;
     }
 
     pub fn cells(&self) -> *const usize {
-        self.cells.as_slice().as_ptr()
+        self.current.as_slice().as_ptr()
     }
 
     pub fn render(&self) -> String {
@@ -93,28 +96,24 @@ impl Universe {
     pub fn tick(&mut self) {  
         let _timer = Timer::new("Universe::tick");
         
-        let mut next = self.cells.clone();
-
         for row in 0..self.height {
             for column in 0..self.width {
                 let index = self.get_index(row, column);
-                let cell = self.cells[index];
+                let cell = self.current[index];
                 let live_neighbors = self.live_neighbor_count(row, column);
-
-                next.set(
-                    index,
-                    match (cell, live_neighbors) {
+                
+                let next_val = match (cell, live_neighbors) {
                         (true, x) if x < 2 => false,
                         (true, 2) | (true, 3) => true,
                         (true, x) if x > 3 => false,
                         (false, 3) => true,
                         (otherwise, _) => otherwise,
-                    },
-                );
+                };
+                
+                self.next.set(index, next_val);
             }
         }
-
-        self.cells = next;
+        std::mem::swap(&mut self.current, &mut self.next);
     }
 
     fn get_index(&self, row: u32, column: u32) -> usize {
@@ -149,50 +148,50 @@ impl Universe {
         };
     
         let nw = self.get_index(north, west);
-        count += self.cells[nw] as u8;
+        count += self.current[nw] as u8;
     
         let n = self.get_index(north, column);
-        count += self.cells[n] as u8;
+        count += self.current[n] as u8;
     
         let ne = self.get_index(north, east);
-        count += self.cells[ne] as u8;
+        count += self.current[ne] as u8;
     
         let w = self.get_index(row, west);
-        count += self.cells[w] as u8;
+        count += self.current[w] as u8;
     
         let e = self.get_index(row, east);
-        count += self.cells[e] as u8;
+        count += self.current[e] as u8;
     
         let sw = self.get_index(south, west);
-        count += self.cells[sw] as u8;
+        count += self.current[sw] as u8;
     
         let s = self.get_index(south, column);
-        count += self.cells[s] as u8;
+        count += self.current[s] as u8;
     
         let se = self.get_index(south, east);
-        count += self.cells[se] as u8;
+        count += self.current[se] as u8;
     
         count
     }
 
     pub fn toggle_cell(&mut self, row: u32, column: u32) {
         let index = self.get_index(row, column);
-        let current = self.cells[index];
-        self.cells.set(index, !current);
+        let current = self.current[index];
+        self.current.set(index, !current);
     }
 
     pub fn randomize(&mut self) {
         let size = (self.width * self.height) as usize;
         for i in 0..size {
             let alive = random() < 0.5;
-            self.cells.set(i, alive);
+            self.current.set(i, alive);
         }
     }
 
     pub fn clear(&mut self) {
         let size = (self.width * self.height) as usize;
         for i in 0..size {
-            self.cells.set(i, false);
+            self.current.set(i, false);
         }
     }
 
@@ -268,7 +267,7 @@ impl fmt::Display for Universe {
         for row in 0..self.height {
             for col in 0..self.width {
                 let index = self.get_index(row, col);
-                let alive = self.cells[index];
+                let alive = self.current[index];
                 let symbol = if alive { '◼' } else { '◻' };
                 write!(f, "{}", symbol)?;
             }
@@ -282,7 +281,7 @@ impl fmt::Display for Universe {
 impl Universe {
     /// Get the dead and alive values for the whole universe
     pub fn get_cells(&self) -> &FixedBitSet {
-        &self.cells
+        &self.current
     }
 
     /// Set cells to be alive by passing the row and column
@@ -290,7 +289,7 @@ impl Universe {
     pub fn set_cells(&mut self, cells: &[(u32, u32)]) {
         for (row, col) in cells.iter().copied() {
             let idx = self.get_index(row, col);
-            self.cells.set(idx, true);
+            self.current.set(idx, true);
         }
     }
 }
