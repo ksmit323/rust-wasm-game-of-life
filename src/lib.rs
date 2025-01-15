@@ -24,6 +24,7 @@ pub struct Universe {
     height: u32,
     current: FixedBitSet,
     next: FixedBitSet,
+    changed_cells: Vec<u32>,
 }
 
 #[wasm_bindgen]
@@ -47,6 +48,7 @@ impl Universe {
             height,
             current,
             next,
+            changed_cells: Vec::new(),
         }
     }
 
@@ -96,13 +98,16 @@ impl Universe {
     pub fn tick(&mut self) {  
         let _timer = Timer::new("Universe::tick");
         
+        // Clear last tick's changes
+        self.changed_cells.clear();
+        
         for row in 0..self.height {
             for column in 0..self.width {
                 let index = self.get_index(row, column);
-                let cell = self.current[index];
+                let old_value = self.current[index];
                 let live_neighbors = self.live_neighbor_count(row, column);
                 
-                let next_val = match (cell, live_neighbors) {
+                let new_value = match (old_value, live_neighbors) {
                         (true, x) if x < 2 => false,
                         (true, 2) | (true, 3) => true,
                         (true, x) if x > 3 => false,
@@ -110,7 +115,11 @@ impl Universe {
                         (otherwise, _) => otherwise,
                 };
                 
-                self.next.set(index, next_val);
+                self.next.set(index, new_value);
+                
+                if new_value != old_value {
+                    self.changed_cells.push(index as u32);
+                }
             }
         }
         std::mem::swap(&mut self.current, &mut self.next);
@@ -189,9 +198,11 @@ impl Universe {
     }
 
     pub fn clear(&mut self) {
+        self.changed_cells.clear();
         let size = (self.width * self.height) as usize;
         for i in 0..size {
             self.current.set(i, false);
+            self.changed_cells.push(i as u32);
         }
     }
 
@@ -259,6 +270,14 @@ impl Universe {
         }
 
         self.set_cells(&positions);
+    }
+    
+    pub fn changed_cells_ptr(&self) -> *const u32 {
+        self.changed_cells.as_ptr()
+    }
+    
+    pub fn changed_cells_length(&self) -> usize {
+        self.changed_cells.len()
     }
 }
 

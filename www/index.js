@@ -37,7 +37,7 @@ canvas.addEventListener("click", event => {
   }
   
   drawGrid();
-  drawCells();
+  drawChangedCells();
 });
 
 const ctx = canvas.getContext('2d');
@@ -52,14 +52,14 @@ const randomButton = document.getElementById("random-btn");
 randomButton.addEventListener("click", () => {
   universe.randomize();
   drawGrid();
-  drawCells();
+  drawChangedCells();
 });
 
 const clearButton = document.getElementById("clear-btn");
 clearButton.addEventListener("click", () => {
   universe.clear();
   drawGrid();
-  drawCells();
+  drawChangedCells();
 });
 
 let animationId = null;
@@ -68,7 +68,6 @@ const renderloop = () => {
   fps.render();
   
   drawGrid();
-  drawCells();
   
   // Convert slider value to number 
   const ticksPerFrame = parseInt(ticksRange.value, 10);
@@ -76,6 +75,7 @@ const renderloop = () => {
   // Run multiple ticks before rendering the next frame
   for (let i = 0; i < ticksPerFrame; i++) {
     universe.tick()
+    drawChangedCells();
   }
   
   animationId = requestAnimationFrame(renderloop);
@@ -135,52 +135,35 @@ const bitIsSet = (n, arr) => {
   return (arr[byte] & mask) === mask;
 };
 
-const drawCells = () => {
+const drawChangedCells = () => {
+  const changedPointer = universe.changed_cells_ptr();
+  const changedLength = universe.changed_cells_length();
+  const changedCells = new Uint32Array(memory.buffer, changedPointer, changedLength);
+  
   const cellsPtr = universe.cells();
   // Because each cell is 1 bit, total bits = (width * height).
   // The number of bytes is (width * height) / 8.
   const cells = new Uint8Array(memory.buffer, cellsPtr, width * height / 8);
 
   ctx.beginPath();
-
-  // 1) Draw ALIVE cells in one pass.
-  ctx.fillStyle = ALIVE_COLOR;
-  for (let row = 0; row < height; row++) {
-    for (let col = 0; col < width; col++) {
-      const idx = getIndex(row, col);
-      // If bit is set => alive => draw with ALIVE_COLOR.
-      if (!bitIsSet(idx, cells)) {
-        continue; // skip dead cells in this pass
-      }
-
-      ctx.fillRect(
-        col * (CELL_SIZE + 1) + 1,
-        row * (CELL_SIZE + 1) + 1,
-        CELL_SIZE,
-        CELL_SIZE
-      );
-    }
+  
+  for (let i = 0; i < changedLength; i++) {
+    const index = changedCells[i];
+    const row = Math.floor(index / width);
+    const column = index % width;
+    
+    const alive = bitIsSet(index, cells);
+    
+    ctx.fillStyle = alive ? ALIVE_COLOR : DEAD_COLOR;
+    
+    ctx.fillRect(
+      column * (CELL_SIZE + 1) + 1,
+      row * (CELL_SIZE + 1) + 1,
+      CELL_SIZE,
+      CELL_SIZE
+    );  
   }
-
-  // 2) Draw DEAD cells in another pass.
-  ctx.fillStyle = DEAD_COLOR;
-  for (let row = 0; row < height; row++) {
-    for (let col = 0; col < width; col++) {
-      const idx = getIndex(row, col);
-      // If bit is NOT set => dead => draw with DEAD_COLOR.
-      if (bitIsSet(idx, cells)) {
-        continue; // skip alive cells in this pass
-      }
-
-      ctx.fillRect(
-        col * (CELL_SIZE + 1) + 1,
-        row * (CELL_SIZE + 1) + 1,
-        CELL_SIZE,
-        CELL_SIZE
-      );
-    }
-  }
-
+  
   ctx.stroke();
 };
 
@@ -226,5 +209,5 @@ const fps = new class {
 };
 
 drawGrid();
-drawCells();
+drawChangedCells();
 play();
